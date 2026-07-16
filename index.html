@@ -22,7 +22,6 @@
 }
 html{scroll-behavior:smooth}
 body{font-family:'Montserrat',sans-serif;background:var(--bk);color:var(--fg);-webkit-font-smoothing:antialiased;min-height:100vh;overflow-x:hidden}
-html.embedded body{min-height:0}
 ::selection{background:rgba(232,0,46,.22);color:#fff}
 body::after{content:'';position:fixed;inset:0;z-index:1000;pointer-events:none;opacity:.022;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");background-size:180px}
 
@@ -71,8 +70,8 @@ h1 em{font-style:italic;font-weight:200;color:var(--fg2)}
 .inp::placeholder{color:rgba(255,255,255,.45);font-weight:600}
 
 /* segmented term control */
-.seg{display:inline-flex;gap:5px;padding:5px;border:1.5px solid var(--stroke);border-radius:12px;background:var(--c1);height:48px}
-.seg-btn{padding:0 18px;border:none;border-radius:8px;background:transparent;color:var(--fg);font-family:'Montserrat',sans-serif;font-size:.8rem;font-weight:800;letter-spacing:.04em;cursor:pointer;white-space:nowrap;transition:background .2s,box-shadow .2s}
+.seg{display:inline-flex;flex-wrap:wrap;gap:5px;padding:5px;border:1.5px solid var(--stroke);border-radius:12px;background:var(--c1);min-height:48px;align-items:center}
+.seg-btn{padding:0 14px;height:38px;display:inline-flex;align-items:center;border:none;border-radius:8px;background:transparent;color:var(--fg);font-family:'Montserrat',sans-serif;font-size:.8rem;font-weight:800;letter-spacing:.04em;cursor:pointer;white-space:nowrap;transition:background .2s,box-shadow .2s}
 .seg-btn.active{background:linear-gradient(180deg,#ff3055,var(--r));color:#fff;box-shadow:0 4px 16px -6px rgba(232,0,46,.6)}
 
 .tiers-head{display:flex;justify-content:space-between;font-size:.75rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--r);padding:0 2px 10px}
@@ -251,9 +250,12 @@ h1 em{font-style:italic;font-weight:200;color:var(--fg2)}
           <div class="field" id="termWrap">
             <label>Campaign Length</label>
             <div class="seg" id="termSeg">
-              <button class="seg-btn active" data-term="1">1 Month</button>
-              <button class="seg-btn" data-term="3">3 Months</button>
+              <button class="seg-btn active" data-term="1">1 mo</button>
+              <button class="seg-btn" data-term="3">3 mo</button>
+              <button class="seg-btn" data-term="6">6 mo</button>
+              <button class="seg-btn" data-term="custom">Custom</button>
             </div>
+            <input class="inp" id="customMonths" type="number" min="1" step="1" value="12" placeholder="# of months" style="display:none;margin-top:8px;max-width:160px">
           </div>
         </div>
 
@@ -263,7 +265,7 @@ h1 em{font-style:italic;font-weight:200;color:var(--fg2)}
           <span class="addon-delta" id="ugcDelta"></span>
         </button>
 
-        <div class="tiers-head"><span id="builderHead">Creator GMV Tier · Videos</span><span id="costHead">Cost</span></div>
+        <div class="tiers-head"><span id="builderHead">Creator GMV Tier · Videos (min 3)</span><span id="costHead">Cost</span></div>
         <div id="tiers"></div>
       </div>
     </div>
@@ -301,7 +303,7 @@ h1 em{font-style:italic;font-weight:200;color:var(--fg2)}
       <!-- 1 vs 3 month analysis (flat only) -->
       <div class="card cmp-card" id="cmpCard">
         <div class="card-inner">
-          <div class="section-lbl">1 Month vs 3 Months</div>
+          <div class="section-lbl" id="cmpTitle">1 Month vs 3 Months</div>
           <div class="cmp-bars">
             <div class="cmp-col">
               <div class="cmp-bar-wrap"><div class="cmp-bar" id="bar1"></div></div>
@@ -313,7 +315,7 @@ h1 em{font-style:italic;font-weight:200;color:var(--fg2)}
               <div class="cmp-bar-wrap"><div class="cmp-bar hot" id="bar3"></div></div>
               <div class="cmp-amt" id="bar3Total">$0</div>
               <div class="cmp-permo" id="bar3PerMo">—</div>
-              <div class="cmp-lbl">3 Months</div>
+              <div class="cmp-lbl" id="bar3Lbl">3 Months</div>
             </div>
           </div>
           <p class="cmp-note" id="cmpNote">—</p>
@@ -378,6 +380,7 @@ const RATES = {
 /* LIVE: hourly rate by tier (1-month, 1–10 hours). L6 not offered. 3-month TBD. */
 const LIVE_HOURLY = {L1:50, L2:100, L3:150, L4:200, L5:300, L6:null};
 const LIVE_HOURS_MAX = 10;
+const MIN_VIDEOS = 3;   // smallest order per tier (0 = tier excluded)
 
 const INCLUDES = {
   flat:['Creator sourcing matched on TikTok Shop GMV','Brief writing & creative direction','Sample coordination & campaign link setup','Newsletter + Discord community placement','TAP campaign support','Weekly performance reporting'],
@@ -388,16 +391,29 @@ const MODE_LABEL = {flat:'Flat Fee', ugc:'UGC + Spark', live:'LIVE Commerce'};
 
 /* ===== STATE ===== */
 let mode = 'flat';                     // 'flat' | 'live'
-let term = 1;                          // 1 or 3
+let term = 1;                          // commitment length in months
+let customMode = false;
 let ugcOn = false;                     // + UGC / Spark add-on
-let videos = {L1:0,L2:0,L3:30,L4:0,L5:0,L6:0};
-let hours  = {L1:0,L2:0,L3:5,L4:0,L5:0,L6:0};
+let videos = {L1:0,L2:0,L3:0,L4:0,L5:0,L6:0};
+let hours  = {L1:0,L2:0,L3:0,L4:0,L5:0,L6:0};
 
 const $ = id => document.getElementById(id);
 const fmt = n => '$' + Math.round(n).toLocaleString('en-US');
 const isLive = () => mode==='live';
 const curTable = () => ugcOn ? 'ugc' : 'flat';
 function offerName(){ return mode==='live' ? 'LIVE Commerce' : (ugcOn ? 'Flat Fee + UGC / Spark' : 'Flat Fee'); }
+
+/* Per-video rate for any commitment length, derived from your 1- and 3-month tables.
+   g(m) = 1.5*(1 - 1/m): exactly 0 at 1mo and 1 at 3mo, so those terms match the tables
+   precisely; beyond 3mo it keeps discounting with diminishing returns (≈31% off at 6mo,
+   leveling toward ~36%). */
+function rateForMonths(table, tier, totalVids, months){
+  const r1 = rateAt(RATES[table][1][tier], totalVids);
+  const r3 = rateAt(RATES[table][3][tier], totalVids);
+  const m  = Math.max(1, months||1);
+  const g  = 1.5*(1 - 1/m);
+  return r1 + (r3 - r1)*g;
+}
 
 /* linear interpolation of per-video rate at total volume v */
 function rateAt(arr, v){
@@ -443,7 +459,7 @@ function totalForTerm(tm){
   let tot=0;
   TIERS.forEach(t=>{
     const v=videos[t.key]||0; if(!v) return;
-    tot += rateAt(RATES[curTable()][tm][t.key], totalVids)*v;
+    tot += rateForMonths(curTable(), t.key, totalVids, tm)*v;
   });
   return tot;
 }
@@ -498,7 +514,7 @@ function compute(){
   let baseTotal=0, rackTotal=0;
   TIERS.forEach(t=>{
     const v=videos[t.key]||0;
-    const rate = rateAt(RATES.flat[term][t.key], totalVids);  // builder always shows base creator-fee rate
+    const rate = rateForMonths('flat', t.key, totalVids, term);  // base creator-fee rate for the term
     const rack = RATES.flat[1][t.key][0];                     // 1-month, 10-video = standard rate
     const line = rate*v;
     if(v>0){ baseTotal+=line; rackTotal+=rack*v; lineParts.push({name:t.name, qty:v, rate, line}); }
@@ -514,7 +530,7 @@ function compute(){
 
   // UGC / Spark add-on = difference vs the all-in UGC table for the same selection
   let ugcAllIn=0;
-  TIERS.forEach(t=>{ const v=videos[t.key]||0; if(v) ugcAllIn += rateAt(RATES.ugc[term][t.key], totalVids)*v; });
+  TIERS.forEach(t=>{ const v=videos[t.key]||0; if(v) ugcAllIn += rateForMonths('ugc', t.key, totalVids, term)*v; });
   const ugcDelta = Math.max(0, ugcAllIn - baseTotal);
   const addOn = ugcOn ? ugcDelta : 0;
   total = baseTotal + addOn;
@@ -527,34 +543,38 @@ function compute(){
   $('breakdownRows').innerHTML = breakdown;
 
   $('rTotal').textContent=fmt(total); $('rTotal2').textContent=fmt(total);
-  $('rPerMonth').textContent = term===3 ? `${fmt(total/3)} / month over 3 months` : 'One-month campaign';
+  $('rPerMonth').textContent = term>1 ? `${fmt(total/term)} / month over ${term} months` : 'One-month campaign';
   $('m1v').textContent=totalVids; $('m1l').textContent='Total Videos';
   $('m2v').textContent=totalVids?fmt(total/totalVids):'$0'; $('m2l').textContent='Blended / Video';
   $('m3v').textContent=fmt(saved); $('m3l').textContent='You Save';
   $('m4v').textContent=savedPct+'%'; $('m4l').textContent='Total Discount';
 
   let note='';
-  if(saved>0) note += `Rate reflects the <b>${totalVids}-video volume</b>${term===3?` + <b>3-month commitment</b>`:''} — <b>${fmt(saved)}</b> (${savedPct}%) below the standard rate.`;
+  if(saved>0) note += `Rate reflects the <b>${totalVids}-video volume</b>${term>1?` + <b>${term}-month commitment</b>`:''} — <b>${fmt(saved)}</b> (${savedPct}%) below the standard rate.`;
   if(ugcOn && addOn>0) note += `${note?'<br>':''}This quote <b>includes the UGC / Spark package</b> (+${fmt(addOn)}) — fully-owned content files + Spark Ad codes.`;
   $('saveNote').style.display = note ? 'block':'none';
   $('saveNote').innerHTML = note;
   $('tier-count').textContent = totalVids + (totalVids===1?' video':' videos');
-  $('offerTag').textContent = `${offerName()} · ${term} Month${term===3?'s':''}`;
+  $('offerTag').textContent = `${offerName()} · ${term} Month${term===1?'':'s'}`;
 
   // toggle chip: only reveal the add-on price once toggled on
   $('ugcDelta').textContent = ugcOn ? `+ ${fmt(ugcDelta)}` : '';
 
   // 1 vs 3 month comparison (includes the UGC add-on when toggled on)
-  const t1=totalForTerm(1), t3=totalForTerm(3);
-  const max=Math.max(t1,t3,1);
+  // 1 month vs the selected commitment (defaults to 3 when on month-to-month)
+  const cmpTerm = term>1 ? term : 3;
+  const t1=totalForTerm(1), tN=totalForTerm(cmpTerm);
+  const max=Math.max(t1,tN,1);
   $('bar1').style.height=Math.max(10,t1/max*100)+'%';
-  $('bar3').style.height=Math.max(10,t3/max*100)+'%';
-  $('bar1Total').textContent=fmt(t1); $('bar3Total').textContent=fmt(t3);
-  $('bar1PerMo').textContent='month-to-month'; $('bar3PerMo').textContent=fmt(t3/3)+'/mo';
-  const diff=t1-t3, diffPct=t1?Math.round(diff/t1*100):0;
+  $('bar3').style.height=Math.max(10,tN/max*100)+'%';
+  $('bar1Total').textContent=fmt(t1); $('bar3Total').textContent=fmt(tN);
+  $('bar1PerMo').textContent='month-to-month'; $('bar3PerMo').textContent=fmt(tN/cmpTerm)+'/mo';
+  $('cmpTitle').textContent=`1 Month vs ${cmpTerm} Months`;
+  $('bar3Lbl').textContent=`${cmpTerm} Months`;
+  const diff=t1-tN, diffPct=t1?Math.round(diff/t1*100):0;
   $('cmpNote').innerHTML = totalVids
-    ? `Same ${totalVids} videos, locked for <b>3 months</b>: <b>${fmt(t3)}</b> vs <b>${fmt(t1)}</b> month-to-month${diff>0?` — your brand saves <b>${fmt(diff)}</b> (${diffPct}%)`:''}. Longer commitment, stronger offer.`
-    : 'Add videos above to compare a 1-month vs 3-month commitment.';
+    ? `Same ${totalVids} videos, locked for <b>${cmpTerm} months</b>: <b>${fmt(tN)}</b> vs <b>${fmt(t1)}</b> month-to-month${diff>0?` — your brand saves <b>${fmt(diff)}</b> (${diffPct}%)`:''}. Longer commitment, stronger offer.`
+    : `Add videos above to compare a 1-month vs ${cmpTerm}-month commitment.`;
 
   window._quote = {mode, offer:offerName(), ugcOn, addOn, name:$('clientName').value.trim(), term, total, lineParts,
                    totalUnits:totalVids, unitWord:'videos', perUnit:totalVids?total/totalVids:0,
@@ -571,7 +591,7 @@ function applyMode(){
   $('termWrap').style.display = live ? 'none':'block';
   $('cmpCard').style.display  = live ? 'none':'block';
   $('ugcToggle').style.display = live ? 'none':'flex';
-  $('builderHead').textContent = live ? 'Creator GMV Tier · Hours / Month' : 'Creator GMV Tier · Videos';
+  $('builderHead').textContent = live ? 'Creator GMV Tier · Hours / Month' : 'Creator GMV Tier · Videos (min 3)';
   $('costHead').textContent = live ? 'Cost / mo' : 'Cost';
   document.querySelector('.intro .sub').textContent = live
     ? "Select the creator GMV tier and streaming hours per month. LIVE is billed hourly per tier — the quote updates live as you type. Nothing's final until a contract is signed."
@@ -588,18 +608,51 @@ document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',()=
 }));
 document.querySelectorAll('.seg-btn').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('.seg-btn').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); term=parseInt(b.dataset.term); compute();
+  b.classList.add('active');
+  if(b.dataset.term==='custom'){
+    customMode=true;
+    $('customMonths').style.display='block';
+    term=Math.max(1, parseInt($('customMonths').value)||1);
+  } else {
+    customMode=false;
+    $('customMonths').style.display='none';
+    term=parseInt(b.dataset.term);
+  }
+  compute();
 }));
+$('customMonths').addEventListener('input', ()=>{
+  if(!customMode) return;
+  term=Math.max(1, parseInt($('customMonths').value)||1);
+  compute();
+});
 $('tiers').addEventListener('input', e=>{
   const key=e.target.dataset.r||e.target.dataset.v; if(!key) return;
-  const max = isLive()? LIVE_HOURS_MAX : 200;
+  const live=isLive();
+  const max = live? LIVE_HOURS_MAX : 200;
   let val=Math.max(0, parseInt(e.target.value)||0);
-  const state = isLive()? hours : videos;
+  if(val>max) val=max;
+  const isRange = e.target.classList.contains('vids-range');
+  // Slider snaps to the minimum right away (it can't be typed). The number box is left
+  // alone during typing so multi-digit entries like "12" aren't blocked — it snaps on 'change'.
+  if(isRange && !live && val>0 && val<MIN_VIDEOS) val=MIN_VIDEOS;
+  const state = live? hours : videos;
   state[key]=val;
   const row=e.target.closest('.trow');
   const rng=row.querySelector('.vids-range'), num=row.querySelector('.vids-num');
-  if(e.target.classList.contains('vids-range')) num.value=val;
-  else rng.value=Math.min(val,max);
+  if(isRange){ num.value=val; rng.value=val; }
+  else { rng.value=Math.min(val,max); }
+  compute();
+});
+$('tiers').addEventListener('change', e=>{
+  if(!e.target.classList.contains('vids-num') || isLive()) return;
+  const key=e.target.dataset.v; if(!key) return;
+  let val=Math.max(0, parseInt(e.target.value)||0);
+  if(val>0 && val<MIN_VIDEOS) val=MIN_VIDEOS;   // commit the 3-video minimum
+  if(val>200) val=200;
+  videos[key]=val;
+  const row=e.target.closest('.trow');
+  row.querySelector('.vids-num').value=val;
+  row.querySelector('.vids-range').value=val;
   compute();
 });
 $('ugcToggle').addEventListener('click', ()=>{
@@ -617,7 +670,7 @@ $('copyBtn').addEventListener('click', ()=>{
   const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
   const unit = q.unitWord==='hours' ? 'hrs' : 'videos';
   const lines = q.lineParts.map(p=>`  • ${p.name} — ${p.qty} ${unit} @ ${fmt(p.rate)}/${q.unitWord==='hours'?'hr':'vid'} = ${fmt(p.rate*p.qty)}`).join('\n') || '  (nothing selected)';
-  const head = `${q.offer}${q.mode!=='live'?` · ${q.term} Month${q.term===3?'s':''}`:' · Hourly (1-month)'}`;
+  const head = `${q.offer}${q.mode!=='live'?` · ${q.term} Month${q.term===1?'':'s'}`:' · Hourly (1-month)'}`;
   const extra = q.mode!=='live' && q.saved>0 ? `\nYour brand saves ${fmt(q.saved)} (${q.savedPct}% off standard)` : '';
   const ugcLine = (q.ugcOn && q.addOn>0) ? `\n  + UGC / Spark package (fully-owned content + Spark Ad codes): +${fmt(q.addOn)}` : '';
   const txt =
@@ -672,21 +725,4 @@ window.addEventListener('beforeprint', stampDate);
 /* ===== INIT ===== */
 stampDate();
 applyMode();
-
-/* ===== EMBED / AUTO-HEIGHT ===== */
-(function(){
-  var embedded=false;
-  try{embedded=window.self!==window.top}catch(e){embedded=true}
-  if(!embedded)return;
-  document.documentElement.classList.add('embedded');
-  var last=0;
-  function send(){
-    var h=document.documentElement.scrollHeight;
-    if(h&&h!==last){last=h;parent.postMessage({type:'thundrr:height',height:h},'*');}
-  }
-  window.addEventListener('load',send);
-  window.addEventListener('resize',send);
-  if(window.ResizeObserver){new ResizeObserver(send).observe(document.body);}
-  [100,400,800,1500].forEach(function(t){setTimeout(send,t);});
-})();
 </script>
