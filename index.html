@@ -21,7 +21,7 @@
   --stroke:rgba(236,232,242,.1);
 }
 html{scroll-behavior:smooth}
-body{font-family:'Montserrat',sans-serif;background:var(--bk);color:var(--fg);-webkit-font-smoothing:antialiased;min-height:100vh;overflow-x:hidden}
+body{font-family:'Montserrat',sans-serif;background:var(--bk);color:var(--fg);-webkit-font-smoothing:antialiased;overflow-x:hidden}
 ::selection{background:rgba(232,0,46,.22);color:#fff}
 body::after{content:'';position:fixed;inset:0;z-index:1000;pointer-events:none;opacity:.022;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");background-size:180px}
 
@@ -725,4 +725,31 @@ window.addEventListener('beforeprint', stampDate);
 /* ===== INIT ===== */
 stampDate();
 applyMode();
+
+/* ===== IFRAME HEIGHT REPORTING ===== */
+(function(){
+  var lastH=0, raf=null;
+  function measure(){
+    var wrap=document.querySelector('.wrap');
+    return Math.ceil(wrap ? wrap.offsetTop+wrap.offsetHeight : document.body.scrollHeight);
+  }
+  function post(){
+    if(raf) return;
+    raf=requestAnimationFrame(function(){
+      raf=null;
+      var h=measure();
+      if(Math.abs(h-lastH)<2) return;          // ignore sub-px churn → no resize loop
+      lastH=h;
+      try{ window.parent.postMessage({type:'thundrr:height',height:h},'*'); }catch(e){}
+    });
+  }
+  var wrap=document.querySelector('.wrap');
+  if(wrap && window.ResizeObserver) new ResizeObserver(post).observe(wrap);
+  window.addEventListener('load',post);
+  window.addEventListener('resize',post);
+  document.addEventListener('input',post,true);   // totals/tiers update as they type
+  document.addEventListener('click',post,true);   // mode toggle, add-ons, length
+  if(document.fonts && document.fonts.ready){ document.fonts.ready.then(post); }
+  post();
+})();
 </script>
